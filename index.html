@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Analisador de Mileage GPS</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .tabela-analisador thead th {
+      position: sticky;
+      top: 0;
+      background-color: #f1f5f9;
+      z-index: 1;
+    }
+
+    .popover {
+      position: absolute;
+      top: 2.5rem;
+      right: 0;
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.5rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      min-width: 200px;
+      max-height: 250px;
+      overflow-y: auto;
+      z-index: 50;
+      padding: 0.5rem;
+    }
+  </style>
+</head>
+<body class="bg-gray-50 h-screen w-screen flex flex-col">
+  <!-- Header -->
+  <header class="bg-white shadow p-4 flex items-center justify-between">
+    <h1 class="text-2xl font-bold text-gray-800">Analisador de Mileage GPS</h1>
+    <button onclick="resetarTudo()" class="text-blue-600 hover:underline text-sm">🔄 Analisar Novamente</button>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 flex flex-col overflow-hidden">
+    <!-- Input Section -->
+    <section id="inputSection" class="p-4 bg-white border-b border-gray-200 space-y-4">
+      <label for="inputData" class="block font-medium text-gray-700">Cole os dados brutos (um por linha):</label>
+      <textarea id="inputData" rows="8" class="w-full p-3 border rounded-lg font-mono text-sm" placeholder="Exemplo:&#10;00AB12CD22XYZ...&#10;88FC22A0BBAAC3..."></textarea>
+      <button onclick="processarLote()" class="bg-blue-600 text-white px-4 py-2 rounded-xl hover:bg-blue-700 transition">
+        Processar Dados
+      </button>
+    </section>
+
+    <!-- Summary + Filtros -->
+    <section id="summarySection" class="hidden px-4 py-2 bg-gray-100 text-sm flex justify-between items-center border-b border-gray-200 relative">
+      <div class="flex items-center gap-6">
+        <div><strong id="contadorTotal">0</strong> registros processados</div>
+
+        <div class="relative">
+          <button onclick="toggleErroPopover()" class="text-red-600 hover:underline font-semibold flex items-center gap-1">
+            🚨 <span id="contadorErros">0</span> erros de mileage (clique para ver)
+          </button>
+
+          <div id="popoverErros" class="popover hidden">
+            <p class="text-sm font-semibold mb-2">Ir para linha com erro:</p>
+            <ul id="listaErros" class="space-y-1 text-sm text-blue-600"></ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <span class="text-gray-600">Filtrar:</span>
+        <button onclick="filtrarTabela('todos')" id="filtroTodos" class="px-3 py-1 text-sm rounded-full bg-blue-600 text-white hover:bg-blue-700 transition">
+          📦 Todos
+        </button>
+        <button onclick="filtrarTabela('gps')" id="filtroGPS" class="px-3 py-1 text-sm rounded-full bg-gray-200 text-gray-800 hover:bg-gray-300 transition">
+          📍 Apenas posição (2G / 4G)
+        </button>
+      </div>
+    </section>
+
+    <!-- Tabela -->
+    <section id="resultado" class="hidden flex-1 overflow-auto bg-white">
+      <table class="tabela-analisador w-full text-sm text-left border-collapse">
+        <thead class="text-gray-700 text-xs uppercase border-b border-gray-300">
+          <tr>
+            <th class="px-3 py-2">#</th>
+            <th class="px-3 py-2">Dado Bruto</th>
+            <th class="px-3 py-2">Tipo GPS</th>
+            <th class="px-3 py-2">Hexadecimal</th>
+            <th class="px-3 py-2">Km</th>
+            <th class="px-3 py-2">Status</th>
+          </tr>
+        </thead>
+        <tbody id="tabelaResultados" class="font-mono"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script>
+    function processarLote() {
+      const input = document.getElementById('inputData').value.trim();
+      const linhas = input.split('\n').filter(l => l.trim().length > 0);
+      const tabela = document.getElementById('tabelaResultados');
+      const resultadoDiv = document.getElementById('resultado');
+      const summaryDiv = document.getElementById('summarySection');
+      const inputSection = document.getElementById('inputSection');
+      tabela.innerHTML = '';
+
+      let kmAnteriorValido = null;
+      let menorKmErroDetectado = null;
+      let totalErros = 0;
+      let linhasComErro = [];
+
+      linhas.forEach((dadoBruto, index) => {
+        const dado = dadoBruto.trim();
+        let tipoGPS = "Não é pacote de GPS";
+        let hex = "—";
+        let kmTexto = "—";
+        let status = "—";
+        let kmDecimal = null;
+        let linhaErroMileage = false;
+
+        if (dado.length >= 26) {
+          const trecho = dado.slice(0, 8);
+          const doisUltimos = trecho.slice(-2).toUpperCase();
+
+          if (doisUltimos === "22") tipoGPS = "GPS 2G";
+          else if (doisUltimos === "A0") tipoGPS = "GPS 4G";
+
+          const isPacoteGPS = tipoGPS === "GPS 2G" || tipoGPS === "GPS 4G";
+
+          if (isPacoteGPS) {
+            hex = dado.slice(-26, -18);
+            if (/^[0-9A-Fa-f]+$/.test(hex)) {
+              const decimal = parseInt(hex, 16);
+              kmDecimal = decimal / 1000;
+              kmTexto = kmDecimal.toFixed(3) + " km";
+
+              if (kmAnteriorValido !== null) {
+                if (kmDecimal < kmAnteriorValido) {
+                  if (menorKmErroDetectado === null || kmDecimal < menorKmErroDetectado) {
+                    status = "🔴 Erro de mileage ↓";
+                    linhaErroMileage = true;
+                    totalErros++;
+                    menorKmErroDetectado = kmDecimal;
+                    linhasComErro.push(index + 1);
+                  } else {
+                    status = "—";
+                  }
+                } else {
+                  status = "✅ OK";
+                  kmAnteriorValido = kmDecimal;
+                  menorKmErroDetectado = null;
+                }
+              } else {
+                status = "✅ OK";
+                kmAnteriorValido = kmDecimal;
+              }
+            } else {
+              hex = "Inválido";
+              kmTexto = "Inválido";
+              status = "Erro no HEX";
+            }
+          }
+        }
+
+        const tipoLinhaClasse = tipoGPS === "GPS 2G" || tipoGPS === "GPS 4G" ? 'linha-gps' : 'linha-outro';
+
+tabela.innerHTML += `
+  <tr class="border-b ${tipoLinhaClasse} ${linhaErroMileage ? 'bg-red-50 text-red-700 font-semibold' : ''}">
+
+            <td class="px-3 py-2">${index + 1}</td>
+            <td class="px-3 py-2">${dado}</td>
+            <td class="px-3 py-2">${tipoGPS}</td>
+            <td class="px-3 py-2">${hex}</td>
+            <td class="px-3 py-2">${kmTexto}</td>
+            <td class="px-3 py-2">${status}</td>
+          </tr>
+        `;
+      });
+
+      // Atualiza contador
+      document.getElementById("contadorTotal").textContent = linhas.length;
+      document.getElementById("contadorErros").textContent = totalErros;
+
+      // Preenche popover com os erros
+      const listaErros = document.getElementById("listaErros");
+      listaErros.innerHTML = "";
+      linhasComErro.forEach((linha) => {
+        listaErros.innerHTML += `
+          <li><button onclick="scrollParaLinha(${linha})" class="hover:underline">${linha}ª linha</button></li>
+        `;
+      });
+
+      resultadoDiv.classList.remove("hidden");
+      summaryDiv.classList.remove("hidden");
+      inputSection.classList.add("hidden");
+    }
+
+    function resetarTudo() {
+      document.getElementById('inputData').value = "";
+      document.getElementById('resultado').classList.add("hidden");
+      document.getElementById('summarySection').classList.add("hidden");
+      document.getElementById('inputSection').classList.remove("hidden");
+      document.getElementById('popoverErros').classList.add("hidden");
+    }
+
+    function filtrarTabela(tipo) {
+  const todasLinhas = document.querySelectorAll("#tabelaResultados tr");
+  const botaoTodos = document.getElementById("filtroTodos");
+  const botaoGPS = document.getElementById("filtroGPS");
+
+  todasLinhas.forEach((linha) => {
+    if (tipo === "todos") {
+      linha.classList.remove("hidden");
+    } else if (tipo === "gps") {
+      if (linha.classList.contains("linha-gps")) {
+        linha.classList.remove("hidden");
+      } else {
+        linha.classList.add("hidden");
+      }
+    }
+  });
+
+  // Estilo ativo dos botões
+  botaoTodos.classList.toggle("bg-blue-600", tipo === "todos");
+  botaoTodos.classList.toggle("text-white", tipo === "todos");
+  botaoTodos.classList.toggle("bg-gray-200", tipo !== "todos");
+  botaoTodos.classList.toggle("text-gray-800", tipo !== "todos");
+
+  botaoGPS.classList.toggle("bg-blue-600", tipo === "gps");
+  botaoGPS.classList.toggle("text-white", tipo === "gps");
+  botaoGPS.classList.toggle("bg-gray-200", tipo !== "gps");
+  botaoGPS.classList.toggle("text-gray-800", tipo !== "gps");
+}
+
+
+    function toggleErroPopover() {
+      const popover = document.getElementById("popoverErros");
+      popover.classList.toggle("hidden");
+    }
+
+    function scrollParaLinha(numeroLinha) {
+      const linhas = document.querySelectorAll("#tabelaResultados tr");
+      const linhaDestino = linhas[numeroLinha - 1];
+      if (linhaDestino) {
+        linhaDestino.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        linhaDestino.classList.add("ring-2", "ring-red-400");
+        setTimeout(() => {
+          linhaDestino.classList.remove("ring-2", "ring-red-400");
+        }, 2000);
+      }
+      document.getElementById("popoverErros").classList.add("hidden");
+    }
+  </script>
+</body>
+</html>

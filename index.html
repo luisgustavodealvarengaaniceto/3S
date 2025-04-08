@@ -57,6 +57,15 @@
             🚨 <span id="contadorErros">0</span> erros de mileage (clique para ver)
           </button>
 
+          <button onclick="mostrarAba('serial')" id="botaoSerial" class="px-3 py-1 text-sm rounded-full bg-gray-200 text-gray-800 hover:bg-gray-300 transition">
+            📟 Serial
+          </button>
+
+          <button onclick="ordenarPorDataEReavaliar()" class="px-3 py-1 text-sm rounded-full bg-gray-200 text-gray-800 hover:bg-gray-300 transition">
+            🕒 Data/Hora
+            </button>
+
+
           <div id="popoverErros" class="popover hidden">
             <p class="text-sm font-semibold mb-2">Ir para linha com erro:</p>
             <ul id="listaErros" class="space-y-1 text-sm text-blue-600"></ul>
@@ -79,15 +88,17 @@
     <section id="resultado" class="hidden flex-1 overflow-auto bg-white">
       <table class="tabela-analisador w-full text-sm text-left border-collapse">
         <thead class="text-gray-700 text-xs uppercase border-b border-gray-300">
-          <tr>
-            <th class="px-3 py-2">#</th>
-            <th class="px-3 py-2">Dado Bruto</th>
-            <th class="px-3 py-2">Tipo GPS</th>
-            <th class="px-3 py-2">Hexadecimal</th>
-            <th class="px-3 py-2">Km</th>
-            <th class="px-3 py-2">Status</th>
-          </tr>
-        </thead>
+  <tr>
+    <th class="px-3 py-2">#</th>
+    <th class="px-3 py-2">Dado Bruto</th>
+    <th class="px-3 py-2">Tipo GPS</th>
+    <th class="px-3 py-2">Hexadecimal</th>
+    <th class="px-3 py-2">Km</th>
+    <th class="px-3 py-2">Serial</th>
+    <th class="px-3 py-2">Status</th>
+  </tr>
+</thead>
+
         <tbody id="tabelaResultados" class="font-mono"></tbody>
       </table>
     </section>
@@ -163,17 +174,26 @@
 
         const tipoLinhaClasse = tipoGPS === "GPS 2G" || tipoGPS === "GPS 4G" ? 'linha-gps' : 'linha-outro';
 
+// Serial
+const ultimos12 = dado.slice(-12);
+const serialHex = ultimos12.slice(0, 4).toUpperCase();
+let serialDecimal = '—';
+if (/^[0-9A-Fa-f]{4}$/.test(serialHex)) {
+  serialDecimal = parseInt(serialHex, 16).toString();
+}
+
 tabela.innerHTML += `
   <tr class="border-b ${tipoLinhaClasse} ${linhaErroMileage ? 'bg-red-50 text-red-700 font-semibold' : ''}">
+    <td class="px-3 py-2">${index + 1}</td>
+    <td class="px-3 py-2">${dado}</td>
+    <td class="px-3 py-2">${tipoGPS}</td>
+    <td class="px-3 py-2">${hex}</td>
+    <td class="px-3 py-2">${kmTexto}</td>
+    <td class="px-3 py-2">${serialDecimal}</td>
+    <td class="px-3 py-2">${status}</td>
+  </tr>
+`;
 
-            <td class="px-3 py-2">${index + 1}</td>
-            <td class="px-3 py-2">${dado}</td>
-            <td class="px-3 py-2">${tipoGPS}</td>
-            <td class="px-3 py-2">${hex}</td>
-            <td class="px-3 py-2">${kmTexto}</td>
-            <td class="px-3 py-2">${status}</td>
-          </tr>
-        `;
       });
 
       // Atualiza contador
@@ -249,6 +269,153 @@ tabela.innerHTML += `
       }
       document.getElementById("popoverErros").classList.add("hidden");
     }
+
+    function mostrarAba(aba) {
+  if (aba === "serial") {
+    ordenarPorSerialEReavaliar();
+
+    // Ativar botão visualmente
+    document.getElementById("botaoSerial").classList.add("bg-blue-600", "text-white");
+    document.getElementById("filtroTodos").classList.remove("bg-blue-600", "text-white");
+    document.getElementById("filtroTodos").classList.add("bg-gray-200", "text-gray-800");
+    document.getElementById("filtroGPS").classList.remove("bg-blue-600", "text-white");
+    document.getElementById("filtroGPS").classList.add("bg-gray-200", "text-gray-800");
+  }
+}
+
+
+function ordenarPorDataEReavaliar() {
+  const input = document.getElementById('inputData').value.trim();
+  const linhas = input.split('\n').filter(l => l.trim().length > 0);
+
+  const tabela = document.getElementById('tabelaResultados');
+  const listaErros = document.getElementById("listaErros");
+
+  tabela.innerHTML = '';
+  listaErros.innerHTML = '';
+
+  let totalErros = 0;
+  let kmAnteriorValido = null;
+  let menorKmErroDetectado = null;
+  let linhasComErro = [];
+
+  const pacotesComData = linhas.map((dado, index) => {
+    const primeiros50 = dado.slice(0, 50);
+    const ultimos12Hex = primeiros50.slice(-12);
+    const partes = ultimos12Hex.match(/.{1,2}/g);
+
+    let dataValida = false;
+    let dateObj = null;
+
+    if (partes && partes.length === 6) {
+      const [yy, mm, dd, hh, min, ss] = partes.map(p => parseInt(p, 16));
+
+      try {
+        dateObj = new Date(2000 + yy, mm - 1, dd, hh, min, ss);
+        dataValida = !isNaN(dateObj.getTime());
+      } catch (_) {}
+    }
+
+    return {
+      indexOriginal: index + 1,
+      dado,
+      dataValida,
+      dateObj,
+    };
+  }).filter(p => p.dataValida);
+
+  // Ordenar por data
+  pacotesComData.sort((a, b) => a.dateObj - b.dateObj);
+
+  pacotesComData.forEach((pacote, i) => {
+    const dado = pacote.dado;
+    const dataFormatada = pacote.dateObj.toLocaleString("pt-BR");
+
+    let tipoGPS = "Não é pacote de GPS";
+    let hex = "—";
+    let kmTexto = "—";
+    let status = "—";
+    let kmDecimal = null;
+    let linhaErroMileage = false;
+
+    if (dado.length >= 26) {
+      const trecho = dado.slice(0, 8);
+      const doisUltimos = trecho.slice(-2).toUpperCase();
+
+      if (doisUltimos === "22") tipoGPS = "GPS 2G";
+      else if (doisUltimos === "A0") tipoGPS = "GPS 4G";
+
+      const isPacoteGPS = tipoGPS === "GPS 2G" || tipoGPS === "GPS 4G";
+
+      if (isPacoteGPS) {
+        hex = dado.slice(-26, -18);
+        if (/^[0-9A-Fa-f]+$/.test(hex)) {
+          const decimal = parseInt(hex, 16);
+          kmDecimal = decimal / 1000;
+          kmTexto = kmDecimal.toFixed(3) + " km";
+
+          if (kmAnteriorValido !== null) {
+            if (kmDecimal < kmAnteriorValido) {
+              if (menorKmErroDetectado === null || kmDecimal < menorKmErroDetectado) {
+                status = "🔴 Erro de mileage ↓";
+                linhaErroMileage = true;
+                totalErros++;
+                menorKmErroDetectado = kmDecimal;
+                linhasComErro.push(i + 1);
+              } else {
+                status = "—";
+              }
+            } else {
+              status = "✅ OK";
+              kmAnteriorValido = kmDecimal;
+              menorKmErroDetectado = null;
+            }
+          } else {
+            status = "✅ OK";
+            kmAnteriorValido = kmDecimal;
+          }
+        } else {
+          hex = "Inválido";
+          kmTexto = "Inválido";
+          status = "Erro no HEX";
+        }
+      }
+    }
+
+    const ultimos12 = dado.slice(-12);
+    const serialHex = ultimos12.slice(0, 4).toUpperCase();
+    let serialDecimal = '—';
+    if (/^[0-9A-Fa-f]{4}$/.test(serialHex)) {
+      serialDecimal = parseInt(serialHex, 16).toString();
+    }
+
+    const tipoLinhaClasse = tipoGPS === "GPS 2G" || tipoGPS === "GPS 4G" ? 'linha-gps' : 'linha-outro';
+
+    tabela.innerHTML += `
+      <tr class="border-b ${tipoLinhaClasse} ${linhaErroMileage ? 'bg-red-50 text-red-700 font-semibold' : ''}">
+        <td class="px-3 py-2">${i + 1}</td>
+        <td class="px-3 py-2">${dado}</td>
+        <td class="px-3 py-2">${tipoGPS}</td>
+        <td class="px-3 py-2">${hex}</td>
+        <td class="px-3 py-2">${kmTexto}</td>
+        <td class="px-3 py-2">${serialDecimal}</td>
+        <td class="px-3 py-2">${status}<br><span class="text-gray-400 text-xs">${dataFormatada}</span></td>
+      </tr>
+    `;
+  });
+
+  document.getElementById("contadorTotal").textContent = pacotesComData.length;
+  document.getElementById("contadorErros").textContent = totalErros;
+
+  linhasComErro.forEach((linha) => {
+    listaErros.innerHTML += `
+      <li><button onclick="scrollParaLinha(${linha})" class="hover:underline">${linha}ª linha</button></li>
+    `;
+  });
+}
+
+
+
   </script>
 </body>
 </html>

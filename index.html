@@ -96,6 +96,7 @@
     <th class="px-3 py-2">Km</th>
     <th class="px-3 py-2">Serial</th>
     <th class="px-3 py-2">Status</th>
+    <th class="px-3 py-2">Data/Hora</th>
   </tr>
 </thead>
 
@@ -106,113 +107,127 @@
 
   <script>
     function processarLote() {
-      const input = document.getElementById('inputData').value.trim();
-      const linhas = input.split('\n').filter(l => l.trim().length > 0);
-      const tabela = document.getElementById('tabelaResultados');
-      const resultadoDiv = document.getElementById('resultado');
-      const summaryDiv = document.getElementById('summarySection');
-      const inputSection = document.getElementById('inputSection');
-      tabela.innerHTML = '';
+  const input = document.getElementById('inputData').value.trim();
+  const linhas = input.split('\n').filter(l => l.trim().length > 0);
+  const tabela = document.getElementById('tabelaResultados');
+  const resultadoDiv = document.getElementById('resultado');
+  const summaryDiv = document.getElementById('summarySection');
+  const inputSection = document.getElementById('inputSection');
+  tabela.innerHTML = '';
 
-      let kmAnteriorValido = null;
-      let menorKmErroDetectado = null;
-      let totalErros = 0;
-      let linhasComErro = [];
+  let kmAnteriorValido = null;
+  let menorKmErroDetectado = null;
+  let totalErros = 0;
+  let linhasComErro = [];
 
-      linhas.forEach((dadoBruto, index) => {
-        const dado = dadoBruto.trim();
-        let tipoGPS = "Não é pacote de GPS";
-        let hex = "—";
-        let kmTexto = "—";
-        let status = "—";
-        let kmDecimal = null;
-        let linhaErroMileage = false;
+  linhas.forEach((dadoBruto, index) => {
+    const dado = dadoBruto.trim();
+    let tipoGPS = "Não é pacote de GPS";
+    let hex = "—";
+    let kmTexto = "—";
+    let status = "—";
+    let kmDecimal = null;
+    let linhaErroMileage = false;
 
-        if (dado.length >= 26) {
-          const trecho = dado.slice(0, 8);
-          const doisUltimos = trecho.slice(-2).toUpperCase();
+    // Serial
+    const ultimos12 = dado.slice(-12);
+    const serialHex = ultimos12.slice(0, 4).toUpperCase();
+    let serialDecimal = '—';
+    if (/^[0-9A-Fa-f]{4}$/.test(serialHex)) {
+      serialDecimal = parseInt(serialHex, 16).toString();
+    }
 
-          if (doisUltimos === "22") tipoGPS = "GPS 2G";
-          else if (doisUltimos === "A0") tipoGPS = "GPS 4G";
+    // Data/Hora
+    let dataHoraTexto = "—";
+    const primeiros50 = dado.slice(0, 50);
+    const dataHex = primeiros50.slice(-12);
+    const partesData = dataHex.match(/.{1,2}/g);
 
-          const isPacoteGPS = tipoGPS === "GPS 2G" || tipoGPS === "GPS 4G";
+    if (partesData && partesData.length === 6) {
+      const [yy, mm, dd, hh, min, ss] = partesData.map(p => parseInt(p, 16));
+      const dataObj = new Date(2000 + yy, mm - 1, dd, hh, min, ss);
+      if (!isNaN(dataObj.getTime())) {
+        dataHoraTexto = dataObj.toLocaleString("pt-BR");
+      }
+    }
 
-          if (isPacoteGPS) {
-            hex = dado.slice(-26, -18);
-            if (/^[0-9A-Fa-f]+$/.test(hex)) {
-              const decimal = parseInt(hex, 16);
-              kmDecimal = decimal / 1000;
-              kmTexto = kmDecimal.toFixed(3) + " km";
+    if (dado.length >= 26) {
+      const trecho = dado.slice(0, 8);
+      const doisUltimos = trecho.slice(-2).toUpperCase();
 
-              if (kmAnteriorValido !== null) {
-                if (kmDecimal < kmAnteriorValido) {
-                  if (menorKmErroDetectado === null || kmDecimal < menorKmErroDetectado) {
-                    status = "🔴 Erro de mileage ↓";
-                    linhaErroMileage = true;
-                    totalErros++;
-                    menorKmErroDetectado = kmDecimal;
-                    linhasComErro.push(index + 1);
-                  } else {
-                    status = "—";
-                  }
-                } else {
-                  status = "✅ OK";
-                  kmAnteriorValido = kmDecimal;
-                  menorKmErroDetectado = null;
-                }
+      if (doisUltimos === "22") tipoGPS = "GPS 2G";
+      else if (doisUltimos === "A0") tipoGPS = "GPS 4G";
+
+      const isPacoteGPS = tipoGPS === "GPS 2G" || tipoGPS === "GPS 4G";
+
+      if (isPacoteGPS) {
+        hex = dado.slice(-26, -18);
+        if (/^[0-9A-Fa-f]+$/.test(hex)) {
+          const decimal = parseInt(hex, 16);
+          kmDecimal = decimal / 1000;
+          kmTexto = kmDecimal.toFixed(3) + " km";
+
+          if (kmAnteriorValido !== null) {
+            if (kmDecimal < kmAnteriorValido) {
+              if (menorKmErroDetectado === null || kmDecimal < menorKmErroDetectado) {
+                status = "🔴 Erro de mileage ↓";
+                linhaErroMileage = true;
+                totalErros++;
+                menorKmErroDetectado = kmDecimal;
+                linhasComErro.push(index + 1);
               } else {
-                status = "✅ OK";
-                kmAnteriorValido = kmDecimal;
+                status = "—";
               }
             } else {
-              hex = "Inválido";
-              kmTexto = "Inválido";
-              status = "Erro no HEX";
+              status = "✅ OK";
+              kmAnteriorValido = kmDecimal;
+              menorKmErroDetectado = null;
             }
+          } else {
+            status = "✅ OK";
+            kmAnteriorValido = kmDecimal;
           }
+        } else {
+          hex = "Inválido";
+          kmTexto = "Inválido";
+          status = "Erro no HEX";
         }
-
-        const tipoLinhaClasse = tipoGPS === "GPS 2G" || tipoGPS === "GPS 4G" ? 'linha-gps' : 'linha-outro';
-
-// Serial
-const ultimos12 = dado.slice(-12);
-const serialHex = ultimos12.slice(0, 4).toUpperCase();
-let serialDecimal = '—';
-if (/^[0-9A-Fa-f]{4}$/.test(serialHex)) {
-  serialDecimal = parseInt(serialHex, 16).toString();
-}
-
-tabela.innerHTML += `
-  <tr class="border-b ${tipoLinhaClasse} ${linhaErroMileage ? 'bg-red-50 text-red-700 font-semibold' : ''}">
-    <td class="px-3 py-2">${index + 1}</td>
-    <td class="px-3 py-2">${dado}</td>
-    <td class="px-3 py-2">${tipoGPS}</td>
-    <td class="px-3 py-2">${hex}</td>
-    <td class="px-3 py-2">${kmTexto}</td>
-    <td class="px-3 py-2">${serialDecimal}</td>
-    <td class="px-3 py-2">${status}</td>
-  </tr>
-`;
-
-      });
-
-      // Atualiza contador
-      document.getElementById("contadorTotal").textContent = linhas.length;
-      document.getElementById("contadorErros").textContent = totalErros;
-
-      // Preenche popover com os erros
-      const listaErros = document.getElementById("listaErros");
-      listaErros.innerHTML = "";
-      linhasComErro.forEach((linha) => {
-        listaErros.innerHTML += `
-          <li><button onclick="scrollParaLinha(${linha})" class="hover:underline">${linha}ª linha</button></li>
-        `;
-      });
-
-      resultadoDiv.classList.remove("hidden");
-      summaryDiv.classList.remove("hidden");
-      inputSection.classList.add("hidden");
+      }
     }
+
+    const tipoLinhaClasse = tipoGPS === "GPS 2G" || tipoGPS === "GPS 4G" ? 'linha-gps' : 'linha-outro';
+
+    tabela.innerHTML += `
+      <tr class="border-b ${tipoLinhaClasse} ${linhaErroMileage ? 'bg-red-50 text-red-700 font-semibold' : ''}">
+        <td class="px-3 py-2">${index + 1}</td>
+        <td class="px-3 py-2">${dado}</td>
+        <td class="px-3 py-2">${tipoGPS}</td>
+        <td class="px-3 py-2">${hex}</td>
+        <td class="px-3 py-2">${kmTexto}</td>
+        <td class="px-3 py-2">${serialDecimal}</td>
+        <td class="px-3 py-2">${status}</td>
+        <td class="px-3 py-2 text-xs text-gray-600">${dataHoraTexto}</td>
+      </tr>
+    `;
+  });
+
+  // Atualiza contador
+  document.getElementById("contadorTotal").textContent = linhas.length;
+  document.getElementById("contadorErros").textContent = totalErros;
+
+  // Preenche popover com os erros
+  const listaErros = document.getElementById("listaErros");
+  listaErros.innerHTML = "";
+  linhasComErro.forEach((linha) => {
+    listaErros.innerHTML += `
+      <li><button onclick="scrollParaLinha(${linha})" class="hover:underline">${linha}ª linha</button></li>
+    `;
+  });
+
+  resultadoDiv.classList.remove("hidden");
+  summaryDiv.classList.remove("hidden");
+  inputSection.classList.add("hidden");
+}
 
     function resetarTudo() {
       document.getElementById('inputData').value = "";

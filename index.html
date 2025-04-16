@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Analisador de Mileage GPS</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <style>
     .tabela-analisador thead th {
       position: sticky;
@@ -12,7 +13,6 @@
       background-color: #f1f5f9;
       z-index: 1;
     }
-
     .popover {
       position: absolute;
       top: 2.5rem;
@@ -27,410 +27,380 @@
       z-index: 50;
       padding: 0.5rem;
     }
+    td:nth-child(2), th:nth-child(2) {
+      max-width: 150px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    /* Estilo do dado bruto que pode ser copiado */
+    .copyable {
+      position: relative;
+      cursor: pointer; /* Indica que é clicável */
+      padding-right: 1.5rem; /* Espaço para o tooltip */
+      transition: background-color 0.3s; /* Efeito de transição para feedback */
+    }
+    /* Tooltip que aparece quando o mouse está em cima do dado bruto */
+    .copyable::before {
+      content: "Clique para copiar o dado bruto por completo";
+      position: absolute;
+      top: -45px; /* Mova o tooltip um pouco para cima */
+      left: 50%; /* Centraliza o tooltip */
+      transform: translateX(-50%); /* Ajusta para centralizar */
+      background-color: rgba(0, 0, 0, 0.75);
+      color: white;
+      padding: 12px; /* Espaço interno do tooltip */
+      border-radius: 8px; /* Curvatura das bordas */
+      font-size: 1rem; /* Tamanho da fonte */
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.3s, visibility 0.3s;
+      z-index: 1000; /* Garantir que o tooltip fique sobre as outras colunas */
+      max-width: 400px; /* Limita a largura máxima, mas permite o crescimento */
+      width: auto; /* A largura será dinâmica de acordo com o texto */
+      text-align: center; /* Centraliza o texto */
+      word-wrap: break-word; /* Quebra a linha automaticamente se necessário */
+    }
+    /* Exibe o tooltip ao passar o mouse */
+    .copyable:hover::before {
+      opacity: 1;
+      visibility: visible;
+    }
+    /* Alteração da cor de fundo quando o item é clicado */
+    .copyable:active {
+      background-color: rgba(0, 0, 0, 0.1);
+    }
+    /* Customizando o filtro */
+    .filter-bar {
+      margin: 20px 0;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .filter-bar input, .filter-bar select {
+      padding: 10px;
+      border-radius: 5px;
+      border: 1px solid #d1d5db;
+      outline: none;
+    }
   </style>
 </head>
-<body class="bg-gray-50 h-screen w-screen flex flex-col">
-  <!-- Header -->
-  <header class="bg-white shadow p-4 flex items-center justify-between">
-    <h1 class="text-2xl font-bold text-gray-800">Analisador de Mileage GPS</h1>
+<body class="bg-blue-50 min-h-screen flex flex-col font-sans">
+  <header class="bg-white shadow-md p-4 flex items-center justify-between">
+    <h1 class="text-2xl font-bold text-blue-700 tracking-tight">📡 Mileage GPS Tracker</h1>
     <button onclick="resetarTudo()" class="text-blue-600 hover:underline text-sm">🔄 Analisar Novamente</button>
   </header>
 
-  <!-- Main Content -->
   <main class="flex-1 flex flex-col overflow-hidden">
-    <!-- Input Section -->
-    <section id="inputSection" class="p-4 bg-white border-b border-gray-200 space-y-4">
-      <label for="inputData" class="block font-medium text-gray-700">Cole os dados brutos (um por linha):</label>
-      <textarea id="inputData" rows="8" class="w-full p-3 border rounded-lg font-mono text-sm" placeholder="Exemplo:&#10;00AB12CD22XYZ...&#10;88FC22A0BBAAC3..."></textarea>
-      <button onclick="processarLote()" class="bg-blue-600 text-white px-4 py-2 rounded-xl hover:bg-blue-700 transition">
-        Processar Dados
-      </button>
-    </section>
+    <section id="inputSection" class="p-6 bg-white border-b border-blue-100 shadow-sm space-y-4">
+      <label for="inputData" class="block text-sm font-semibold text-blue-800">
+        Cole os dados brutos (um por linha):
+      </label>
+      <textarea id="inputData" rows="6"
+        class="w-full p-3 border border-blue-200 rounded-md font-mono text-sm bg-blue-50 placeholder-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        placeholder="Exemplo:\n00AB12CD22XYZ...\n88FC22A0BBAAC3..." required ></textarea>
+      <p class="text-xs text-gray-600">
+        Obs: este software suporta aproximadamente até 5.000 linhas sem travar. Processamentos maiores podem ficar mais lentos.
+      </p>
 
-    <!-- Summary + Filtros -->
-    <section id="summarySection" class="hidden px-4 py-2 bg-gray-100 text-sm flex justify-between items-center border-b border-gray-200 relative">
-      <div class="flex items-center gap-6">
-        <div><strong id="contadorTotal">0</strong> registros processados</div>
-
-        <div class="relative">
-          <button onclick="toggleErroPopover()" class="text-red-600 hover:underline font-semibold flex items-center gap-1">
-            🚨 <span id="contadorErros">0</span> erros de mileage (clique para ver)
-          </button>
-
-          <button onclick="mostrarAba('serial')" id="botaoSerial" class="px-3 py-1 text-sm rounded-full bg-gray-200 text-gray-800 hover:bg-gray-300 transition">
-            📟 Serial
-          </button>
-
-          <button onclick="ordenarPorDataEReavaliar()" class="px-3 py-1 text-sm rounded-full bg-gray-200 text-gray-800 hover:bg-gray-300 transition">
-            🕒 Data/Hora
-            </button>
-
-
-          <div id="popoverErros" class="popover hidden">
-            <p class="text-sm font-semibold mb-2">Ir para linha com erro:</p>
-            <ul id="listaErros" class="space-y-1 text-sm text-blue-600"></ul>
-          </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label for="ignicaoLigadaIntervalo" class="block text-sm font-semibold text-blue-800">
+            Intervalo ignição ligada (seg):
+          </label>
+          <input type="number" id="ignicaoLigadaIntervalo"
+            class="w-full p-3 border border-blue-200 rounded-md bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Ex: 120" required />
+        </div>
+        <div>
+          <label for="ignicaoDesligadaIntervalo" class="block text-sm font-semibold text-blue-800">
+            Intervalo ignição desligada (seg):
+          </label>
+          <input type="number" id="ignicaoDesligadaIntervalo"
+            class="w-full p-3 border border-blue-200 rounded-md bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Ex: 120" required />
+        </div>
+        <div>
+          <label for="folgaIntervalo" class="block text-sm font-semibold text-blue-800">Folga (seg):</label>
+          <input type="number" id="folgaIntervalo"
+            class="w-full p-3 border border-blue-200 rounded-md bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Ex: 5" required />
         </div>
       </div>
 
-      <div class="flex items-center gap-2">
-        <span class="text-gray-600">Filtrar:</span>
-        <button onclick="filtrarTabela('todos')" id="filtroTodos" class="px-3 py-1 text-sm rounded-full bg-blue-600 text-white hover:bg-blue-700 transition">
-          📦 Todos
-        </button>
-        <button onclick="filtrarTabela('gps')" id="filtroGPS" class="px-3 py-1 text-sm rounded-full bg-gray-200 text-gray-800 hover:bg-gray-300 transition">
-          📍 Apenas posição (2G / 4G)
+      <div class="flex justify-end">
+        <button id="processarBtn"
+          class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition">
+          📊 Processar Dados
         </button>
       </div>
     </section>
 
-    <!-- Tabela -->
-    <section id="resultado" class="hidden flex-1 overflow-auto bg-white">
-      <table class="tabela-analisador w-full text-sm text-left border-collapse">
-        <thead class="text-gray-700 text-xs uppercase border-b border-gray-300">
-  <tr>
-    <th class="px-3 py-2">#</th>
-    <th class="px-3 py-2">Dado Bruto</th>
-    <th class="px-3 py-2">Tipo GPS</th>
-    <th class="px-3 py-2">Hexadecimal</th>
-    <th class="px-3 py-2">Km</th>
-    <th class="px-3 py-2">Serial</th>
-    <th class="px-3 py-2">Status</th>
-    <th class="px-3 py-2">Data/Hora</th>
-  </tr>
-</thead>
+    <section id="summarySection"
+      class="hidden px-6 py-4 bg-blue-100 text-sm flex justify-between items-center border-b border-blue-200 shadow-sm">
+      <div class="flex items-center gap-6 text-blue-900">
+        <div><strong id="contadorTotal">0</strong> registros</div>
+        <div>
+          <button onclick="toggleErroPopover()" class="text-red-600 hover:underline font-medium flex items-center gap-1">
+            🚨 <span id="contadorErros">0</span> erros de mileage
+          </button>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="text-blue-900 font-medium">Filtrar:</span>
+        <input type="text" id="searchInput" placeholder="Buscar..." class="p-2 border border-blue-300 rounded-md">
+        <button onclick="filtrarTabela('todos')"
+          class="px-3 py-1 text-sm rounded-full bg-blue-600 text-white hover:bg-blue-700">📦 Todos</button>
+        <button onclick="filtrarTabela('gps')"
+          class="px-3 py-1 text-sm rounded-full bg-white border border-blue-400 text-blue-800 hover:bg-blue-100">📍
+          Apenas posição</button>
+      </div>
+    </section>
 
-        <tbody id="tabelaResultados" class="font-mono"></tbody>
+    <section id="resultado" class="hidden flex-1 overflow-auto bg-white relative">
+      <div id="popoverErros" class="popover hidden">
+        <strong>Linhas com erro:</strong>
+        <ul id="listaErros" class="mt-2 list-decimal list-inside text-sm text-red-700"></ul>
+      </div>
+      <table class="tabela-analisador w-full text-sm text-left border-collapse">
+        <thead class="bg-blue-100 text-blue-800 uppercase text-xs border-b border-blue-200 sticky top-0 z-10">
+          <tr>
+            <th class="px-3 py-2">#</th>
+            <th class="px-1 py-2 max-w-xs">Dado Bruto</th>
+            <th class="px-3 py-2">Tipo GPS</th>
+            <th class="px-3 py-2">Hexadecimal</th>
+            <th class="px-3 py-2">Km</th>
+            <th class="px-3 py-2">Status</th>
+            <th class="px-3 py-2">Data/Hora</th>
+            <th class="px-3 py-2">Ignição</th>
+            <th class="px-3 py-2">Diferença</th>
+            <th class="px-3 py-2">Mileage</th>
+            <th class="px-3 py-2">Intervalo</th>
+          </tr>
+        </thead>
+        <tbody id="tabelaResultados" class="font-mono text-blue-900"></tbody>
       </table>
     </section>
   </main>
 
   <script>
+    // Função de validação
+    document.getElementById('processarBtn').addEventListener('click', function(event) {
+  const ignicaoLigadaIntervalo = document.getElementById('ignicaoLigadaIntervalo');
+  const ignicaoDesligadaIntervalo = document.getElementById('ignicaoDesligadaIntervalo');
+  
+  // Verifica se os campos obrigatórios estão vazios
+  if (!ignicaoLigadaIntervalo.value || !ignicaoDesligadaIntervalo.value) {
+    event.preventDefault(); // Previne o envio do formulário
+    alert("Por favor, preencha todos os campos obrigatórios de intervalo de ignição.");
+    return; // Impede que o processo continue
+  }
+    });
+
+    const processarBtn = document.getElementById('processarBtn');
+    const tabela = document.getElementById('tabelaResultados');
+    const listaErrosEl = document.getElementById('listaErros');
+    let linhasComErroGlobal = [];
+
     function processarLote() {
-  const input = document.getElementById('inputData').value.trim();
-  const linhas = input.split('\n').filter(l => l.trim().length > 0);
-  const tabela = document.getElementById('tabelaResultados');
-  const resultadoDiv = document.getElementById('resultado');
-  const summaryDiv = document.getElementById('summarySection');
-  const inputSection = document.getElementById('inputSection');
-  tabela.innerHTML = '';
+      const input = document.getElementById('inputData').value.trim();
+      const linhas = input.split('\n').filter(l => l.trim() && !l.startsWith('7979'));
+      if (!linhas.length) return alert('Cole ao menos uma linha de dados.');
 
-  let kmAnteriorValido = null;
-  let menorKmErroDetectado = null;
-  let totalErros = 0;
-  let linhasComErro = [];
+      // Inicialização
+      tabela.innerHTML = '';
+      listaErrosEl.innerHTML = '';
+      linhasComErroGlobal = [];
+      document.getElementById('contadorTotal').textContent = linhas.length;
+      document.getElementById('contadorErros').textContent = '0';
+      document.getElementById('resultado').classList.remove('hidden');
+      document.getElementById('summarySection').classList.remove('hidden');
+      document.getElementById('inputSection').classList.add('hidden');
 
-  linhas.forEach((dadoBruto, index) => {
-    const dado = dadoBruto.trim();
-    let tipoGPS = "Não é pacote de GPS";
-    let hex = "—";
-    let kmTexto = "—";
-    let status = "—";
-    let kmDecimal = null;
-    let linhaErroMileage = false;
+      const intervaloLigada = parseInt(document.getElementById('ignicaoLigadaIntervalo').value) || 120;
+      const intervaloDesligada = parseInt(document.getElementById('ignicaoDesligadaIntervalo').value) || 120;
+      const folgaIntervalo = parseInt(document.getElementById('folgaIntervalo').value) || 0;
 
-    // Serial
-    const ultimos12 = dado.slice(-12);
-    const serialHex = ultimos12.slice(0, 4).toUpperCase();
-    let serialDecimal = '—';
-    if (/^[0-9A-Fa-f]{4}$/.test(serialHex)) {
-      serialDecimal = parseInt(serialHex, 16).toString();
-    }
+      let kmAnteriorValido = null;
+      let ultimaDataLigada = null;
+      let ultimaDataDesligada = null;
+      let ultimaData = null;
 
-    // Data/Hora
-    let dataHoraTexto = "—";
-    const primeiros50 = dado.slice(0, 50);
-    const dataHex = primeiros50.slice(-12);
-    const partesData = dataHex.match(/.{1,2}/g);
+      // Processa em lotes para não travar a UI
+      const batchSize = 200;
+      let index = 0;
 
-    if (partesData && partesData.length === 6) {
-      const [yy, mm, dd, hh, min, ss] = partesData.map(p => parseInt(p, 16));
-      const dataObj = new Date(2000 + yy, mm - 1, dd, hh, min, ss);
-      if (!isNaN(dataObj.getTime())) {
-        dataHoraTexto = dataObj.toLocaleString("pt-BR");
-      }
-    }
+      processarBtn.disabled = true;
+      processarBtn.textContent = '⏳ Processando...';
 
-    if (dado.length >= 26) {
-      const trecho = dado.slice(0, 8);
-      const doisUltimos = trecho.slice(-2).toUpperCase();
+      function processBatch() {
+        const fragment = document.createDocumentFragment();
+        for (let i = 0; i < batchSize && index < linhas.length; i++, index++) {
+          const dadoBruto = linhas[index].trim();
+          let tipoGPS = 'Não é pacote de GPS', hex = '—', kmTexto = '—', status = '—';
+          let kmDecimal = null, ignicaoStatus = '—', linhaErroMileage = false, linhaErroEnvio = false;
+          let dataHoraTexto = '—', dataObj = null;
 
-      if (doisUltimos === "22") tipoGPS = "GPS 2G";
-      else if (doisUltimos === "A0") tipoGPS = "GPS 4G";
+          // Verifica se é pacote de GPS
+          const code = dadoBruto.slice(6, 8).toUpperCase();
+          if (code === '22' || code === 'A0') {
+            tipoGPS = code === '22' ? 'GPS 2G' : 'GPS 4G';
 
-      const isPacoteGPS = tipoGPS === "GPS 2G" || tipoGPS === "GPS 4G";
-
-      if (isPacoteGPS) {
-        hex = dado.slice(-26, -18);
-        if (/^[0-9A-Fa-f]+$/.test(hex)) {
-          const decimal = parseInt(hex, 16);
-          kmDecimal = decimal / 1000;
-          kmTexto = kmDecimal.toFixed(3) + " km";
-
-          if (kmAnteriorValido !== null) {
-            if (kmDecimal < kmAnteriorValido) {
-              if (menorKmErroDetectado === null || kmDecimal < menorKmErroDetectado) {
-                status = "🔴 Erro de mileage ↓";
-                linhaErroMileage = true;
-                totalErros++;
-                menorKmErroDetectado = kmDecimal;
-                linhasComErro.push(index + 1);
-              } else {
-                status = "—";
-              }
-            } else {
-              status = "✅ OK";
-              kmAnteriorValido = kmDecimal;
-              menorKmErroDetectado = null;
+            // Extrai data/hora
+            const primeiros50 = dadoBruto.slice(0, 50);
+            const partesData = primeiros50.slice(-12).match(/.{1,2}/g);
+            if (partesData?.length === 6) {
+              const [yy, mm, dd, hh, min, ss] = partesData.map(p => parseInt(p, 16));
+              dataObj = new Date(2000 + yy, mm - 1, dd, hh, min, ss);
+              if (!isNaN(dataObj)) dataHoraTexto = dataObj.toLocaleString('pt-BR');
             }
+
+            // Extrai e processa o km
+            hex = dadoBruto.slice(-26, -18);
+            if (/^[0-9A-F]+$/i.test(hex)) {
+              kmDecimal = parseInt(hex, 16) / 1000;
+              kmTexto = kmDecimal.toFixed(3) + ' km';
+              if (kmAnteriorValido !== null && kmDecimal < kmAnteriorValido) {
+                linhaErroMileage = true;
+                linhasComErroGlobal.push(index + 1);
+              }
+              status = linhaErroMileage ? '🔴 Erro Mileage' : '✅ OK';
+              kmAnteriorValido = kmDecimal;
+            } else {
+              status = 'Erro no HEX';
+            }
+
+            // Verifica ignição e intervalo
+            const tipoByte = dadoBruto.slice(8,10);
+            if (dataObj) {
+              if (tipoByte === '01') {
+                ignicaoStatus = 'Ligada';
+                if (ultimaDataLigada) {
+                  const diff = (dataObj - ultimaDataLigada) / 1000;
+                  if (Math.abs(diff) > intervaloLigada + folgaIntervalo) linhaErroEnvio = true;
+                }
+                ultimaDataLigada = dataObj;
+              } else if (tipoByte === '02') {
+                ignicaoStatus = 'Desligada';
+                if (ultimaDataDesligada) {
+                  const diff = (dataObj - ultimaDataDesligada) / 1000;
+                  if (Math.abs(diff) > intervaloDesligada + folgaIntervalo) linhaErroEnvio = true;
+                }
+                ultimaDataDesligada = dataObj;
+              }
+            }
+
+            // Diferença de tempo
+            let diffTempo = '—';
+            if (ultimaData && dataObj) {
+              const diffMinutos = (dataObj - ultimaData) / 1000 / 60;
+              diffTempo = `${diffMinutos.toFixed(2)} min`;
+            }
+            ultimaData = dataObj;
+
+            const mileageStatus = linhaErroMileage ? 'Erro' : 'OK';
+            const intervaloStatus = linhaErroEnvio ? 'Erro' : 'OK';
+
+            const tr = document.createElement('tr');
+            if (linhaErroMileage) tr.classList.add('bg-red-50','text-red-700','font-semibold');
+            tr.innerHTML = `
+              <td class="px-3 py-2">${index + 1}</td>
+              <td class="px-1 py-2 copyable">${dadoBruto}</td>
+              <td class="px-3 py-2">${tipoGPS}</td>
+              <td class="px-3 py-2">${hex}</td>
+              <td class="px-3 py-2">${kmTexto}</td>
+              <td class="px-3 py-2">${status}</td>
+              <td class="px-3 py-2 text-xs">${dataHoraTexto}</td>
+              <td class="px-3 py-2">${ignicaoStatus}</td>
+              <td class="px-3 py-2">${diffTempo}</td>
+              <td class="px-3 py-2">${mileageStatus}</td>
+              <td class="px-3 py-2">${intervaloStatus}</td>`;
+            fragment.appendChild(tr);
           } else {
-            status = "✅ OK";
-            kmAnteriorValido = kmDecimal;
+            // Se não for pacote GPS, não fazer nada
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+              <td class="px-3 py-2">${index + 1}</td>
+              <td class="px-1 py-2 copyable">${dadoBruto}</td>
+              <td class="px-3 py-2">Não é pacote GPS</td>
+              <td class="px-3 py-2">—</td>
+              <td class="px-3 py-2">—</td>
+              <td class="px-3 py-2">—</td>
+              <td class="px-3 py-2">—</td>
+              <td class="px-3 py-2">—</td>
+              <td class="px-3 py-2">—</td>
+              <td class="px-3 py-2">—</td>
+              <td class="px-3 py-2">—</td>`;
+            fragment.appendChild(tr);
           }
+        }
+        tabela.appendChild(fragment);
+
+        // Atualiza contadores
+        document.getElementById('contadorErros').textContent = linhasComErroGlobal.length;
+        if (index < linhas.length) {
+          requestAnimationFrame(processBatch);
         } else {
-          hex = "Inválido";
-          kmTexto = "Inválido";
-          status = "Erro no HEX";
+          finalizarProcessamento();
         }
       }
+
+      function finalizarProcessamento() {
+        // Preenche lista de erros
+        linhasComErroGlobal.forEach(n => {
+          const li = document.createElement('li');
+          li.textContent = n;
+          listaErrosEl.appendChild(li);
+        });
+        processarBtn.disabled = false;
+        processarBtn.textContent = '📊 Processar Dados';
+      }
+
+      processBatch();
     }
 
-    const tipoLinhaClasse = tipoGPS === "GPS 2G" || tipoGPS === "GPS 4G" ? 'linha-gps' : 'linha-outro';
-
-    tabela.innerHTML += `
-      <tr class="border-b ${tipoLinhaClasse} ${linhaErroMileage ? 'bg-red-50 text-red-700 font-semibold' : ''}">
-        <td class="px-3 py-2">${index + 1}</td>
-        <td class="px-3 py-2">${dado}</td>
-        <td class="px-3 py-2">${tipoGPS}</td>
-        <td class="px-3 py-2">${hex}</td>
-        <td class="px-3 py-2">${kmTexto}</td>
-        <td class="px-3 py-2">${serialDecimal}</td>
-        <td class="px-3 py-2">${status}</td>
-        <td class="px-3 py-2 text-xs text-gray-600">${dataHoraTexto}</td>
-      </tr>
-    `;
-  });
-
-  // Atualiza contador
-  document.getElementById("contadorTotal").textContent = linhas.length;
-  document.getElementById("contadorErros").textContent = totalErros;
-
-  // Preenche popover com os erros
-  const listaErros = document.getElementById("listaErros");
-  listaErros.innerHTML = "";
-  linhasComErro.forEach((linha) => {
-    listaErros.innerHTML += `
-      <li><button onclick="scrollParaLinha(${linha})" class="hover:underline">${linha}ª linha</button></li>
-    `;
-  });
-
-  resultadoDiv.classList.remove("hidden");
-  summaryDiv.classList.remove("hidden");
-  inputSection.classList.add("hidden");
-}
+    document.getElementById('processarBtn').addEventListener('click', processarLote);
 
     function resetarTudo() {
-      document.getElementById('inputData').value = "";
-      document.getElementById('resultado').classList.add("hidden");
-      document.getElementById('summarySection').classList.add("hidden");
-      document.getElementById('inputSection').classList.remove("hidden");
-      document.getElementById('popoverErros').classList.add("hidden");
+      document.getElementById('inputData').value = '';
+      document.getElementById('resultado').classList.add('hidden');
+      document.getElementById('summarySection').classList.add('hidden');
+      document.getElementById('inputSection').classList.remove('hidden');
     }
 
     function filtrarTabela(tipo) {
-  const todasLinhas = document.querySelectorAll("#tabelaResultados tr");
-  const botaoTodos = document.getElementById("filtroTodos");
-  const botaoGPS = document.getElementById("filtroGPS");
-
-  todasLinhas.forEach((linha) => {
-    if (tipo === "todos") {
-      linha.classList.remove("hidden");
-    } else if (tipo === "gps") {
-      if (linha.classList.contains("linha-gps")) {
-        linha.classList.remove("hidden");
-      } else {
-        linha.classList.add("hidden");
-      }
+      document.querySelectorAll('#tabelaResultados tr').forEach(linha => {
+        if (tipo === 'todos') linha.classList.remove('hidden');
+        else if (tipo === 'gps')
+          linha.classList.toggle('hidden', !linha.querySelector('td:nth-child(3)').textContent.startsWith('GPS'));
+      });
     }
-  });
 
-  // Estilo ativo dos botões
-  botaoTodos.classList.toggle("bg-blue-600", tipo === "todos");
-  botaoTodos.classList.toggle("text-white", tipo === "todos");
-  botaoTodos.classList.toggle("bg-gray-200", tipo !== "todos");
-  botaoTodos.classList.toggle("text-gray-800", tipo !== "todos");
-
-  botaoGPS.classList.toggle("bg-blue-600", tipo === "gps");
-  botaoGPS.classList.toggle("text-white", tipo === "gps");
-  botaoGPS.classList.toggle("bg-gray-200", tipo !== "gps");
-  botaoGPS.classList.toggle("text-gray-800", tipo !== "gps");
-}
-
+    // Filtro de busca
+    document.getElementById('searchInput').addEventListener('input', function() {
+      const query = this.value.toLowerCase();
+      document.querySelectorAll('#tabelaResultados tr').forEach(linha => {
+        const text = linha.textContent.toLowerCase();
+        linha.classList.toggle('hidden', !text.includes(query));
+      });
+    });
 
     function toggleErroPopover() {
-      const popover = document.getElementById("popoverErros");
-      popover.classList.toggle("hidden");
+      document.getElementById('popoverErros').classList.toggle('hidden');
     }
 
-    function scrollParaLinha(numeroLinha) {
-      const linhas = document.querySelectorAll("#tabelaResultados tr");
-      const linhaDestino = linhas[numeroLinha - 1];
-      if (linhaDestino) {
-        linhaDestino.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        linhaDestino.classList.add("ring-2", "ring-red-400");
-        setTimeout(() => {
-          linhaDestino.classList.remove("ring-2", "ring-red-400");
-        }, 2000);
-      }
-      document.getElementById("popoverErros").classList.add("hidden");
-    }
-
-    function mostrarAba(aba) {
-  if (aba === "serial") {
-    ordenarPorSerialEReavaliar();
-
-    // Ativar botão visualmente
-    document.getElementById("botaoSerial").classList.add("bg-blue-600", "text-white");
-    document.getElementById("filtroTodos").classList.remove("bg-blue-600", "text-white");
-    document.getElementById("filtroTodos").classList.add("bg-gray-200", "text-gray-800");
-    document.getElementById("filtroGPS").classList.remove("bg-blue-600", "text-white");
-    document.getElementById("filtroGPS").classList.add("bg-gray-200", "text-gray-800");
-  }
-}
-
-
-function ordenarPorDataEReavaliar() {
-  const input = document.getElementById('inputData').value.trim();
-  const linhas = input.split('\n').filter(l => l.trim().length > 0);
-
-  const tabela = document.getElementById('tabelaResultados');
-  const listaErros = document.getElementById("listaErros");
-
-  tabela.innerHTML = '';
-  listaErros.innerHTML = '';
-
-  let totalErros = 0;
-  let kmAnteriorValido = null;
-  let menorKmErroDetectado = null;
-  let linhasComErro = [];
-
-  const pacotesComData = linhas.map((dado, index) => {
-    const primeiros50 = dado.slice(0, 50);
-    const ultimos12Hex = primeiros50.slice(-12);
-    const partes = ultimos12Hex.match(/.{1,2}/g);
-
-    let dataValida = false;
-    let dateObj = null;
-
-    if (partes && partes.length === 6) {
-      const [yy, mm, dd, hh, min, ss] = partes.map(p => parseInt(p, 16));
-
-      try {
-        dateObj = new Date(2000 + yy, mm - 1, dd, hh, min, ss);
-        dataValida = !isNaN(dateObj.getTime());
-      } catch (_) {}
-    }
-
-    return {
-      indexOriginal: index + 1,
-      dado,
-      dataValida,
-      dateObj,
-    };
-  }).filter(p => p.dataValida);
-
-  // Ordenar por data
-  pacotesComData.sort((a, b) => a.dateObj - b.dateObj);
-
-  pacotesComData.forEach((pacote, i) => {
-    const dado = pacote.dado;
-    const dataFormatada = pacote.dateObj.toLocaleString("pt-BR");
-
-    let tipoGPS = "Não é pacote de GPS";
-    let hex = "—";
-    let kmTexto = "—";
-    let status = "—";
-    let kmDecimal = null;
-    let linhaErroMileage = false;
-
-    if (dado.length >= 26) {
-      const trecho = dado.slice(0, 8);
-      const doisUltimos = trecho.slice(-2).toUpperCase();
-
-      if (doisUltimos === "22") tipoGPS = "GPS 2G";
-      else if (doisUltimos === "A0") tipoGPS = "GPS 4G";
-
-      const isPacoteGPS = tipoGPS === "GPS 2G" || tipoGPS === "GPS 4G";
-
-      if (isPacoteGPS) {
-        hex = dado.slice(-26, -18);
-        if (/^[0-9A-Fa-f]+$/.test(hex)) {
-          const decimal = parseInt(hex, 16);
-          kmDecimal = decimal / 1000;
-          kmTexto = kmDecimal.toFixed(3) + " km";
-
-          if (kmAnteriorValido !== null) {
-            if (kmDecimal < kmAnteriorValido) {
-              if (menorKmErroDetectado === null || kmDecimal < menorKmErroDetectado) {
-                status = "🔴 Erro de mileage ↓";
-                linhaErroMileage = true;
-                totalErros++;
-                menorKmErroDetectado = kmDecimal;
-                linhasComErro.push(i + 1);
-              } else {
-                status = "—";
-              }
-            } else {
-              status = "✅ OK";
-              kmAnteriorValido = kmDecimal;
-              menorKmErroDetectado = null;
-            }
-          } else {
-            status = "✅ OK";
-            kmAnteriorValido = kmDecimal;
-          }
-        } else {
-          hex = "Inválido";
-          kmTexto = "Inválido";
-          status = "Erro no HEX";
-        }
-      }
-    }
-
-    const ultimos12 = dado.slice(-12);
-    const serialHex = ultimos12.slice(0, 4).toUpperCase();
-    let serialDecimal = '—';
-    if (/^[0-9A-Fa-f]{4}$/.test(serialHex)) {
-      serialDecimal = parseInt(serialHex, 16).toString();
-    }
-
-    const tipoLinhaClasse = tipoGPS === "GPS 2G" || tipoGPS === "GPS 4G" ? 'linha-gps' : 'linha-outro';
-
-    tabela.innerHTML += `
-      <tr class="border-b ${tipoLinhaClasse} ${linhaErroMileage ? 'bg-red-50 text-red-700 font-semibold' : ''}">
-        <td class="px-3 py-2">${i + 1}</td>
-        <td class="px-3 py-2">${dado}</td>
-        <td class="px-3 py-2">${tipoGPS}</td>
-        <td class="px-3 py-2">${hex}</td>
-        <td class="px-3 py-2">${kmTexto}</td>
-        <td class="px-3 py-2">${serialDecimal}</td>
-        <td class="px-3 py-2">${status}<br><span class="text-gray-400 text-xs">${dataFormatada}</span></td>
-      </tr>
-    `;
+    // Cópia ao clicar no dado bruto
+    document.querySelectorAll('.copyable').forEach(element => {
+  element.addEventListener('click', () => {
+    const text = element.textContent.trim(); // Pega o texto do dado bruto
+    navigator.clipboard.writeText(text).then(() => {
+      // Opcional: feedback visual indicando que o texto foi copiado
+      element.style.backgroundColor = '#d1d5db'; // Altera a cor de fundo como feedback
+      setTimeout(() => {
+        element.style.backgroundColor = ''; // Restaura a cor original após um tempo
+      }, 1500);
+    });
   });
-
-  document.getElementById("contadorTotal").textContent = pacotesComData.length;
-  document.getElementById("contadorErros").textContent = totalErros;
-
-  linhasComErro.forEach((linha) => {
-    listaErros.innerHTML += `
-      <li><button onclick="scrollParaLinha(${linha})" class="hover:underline">${linha}ª linha</button></li>
-    `;
-  });
-}
-
-
-
+});
   </script>
 </body>
 </html>

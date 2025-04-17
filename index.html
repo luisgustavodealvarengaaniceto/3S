@@ -291,10 +291,18 @@
 
             // Diferença de tempo
             let diffTempo = '—';
-            if (ultimaData && dataObj) {
-              const diffMinutos = (dataObj - ultimaData) / 1000 / 60;
-              diffTempo = `${diffMinutos.toFixed(2)} min`;
-            }
+if (ultimaData && dataObj) {
+  const diffSeconds = (dataObj - ultimaData) / 1000;
+  if (diffSeconds < 60) {
+    // Menos de 1 minuto: exibe em segundos
+    diffTempo = `${diffSeconds.toFixed(0)} s`;
+  } else {
+    // 1 minuto ou mais: exibe em minutos com duas casas
+    const diffMinutes = diffSeconds / 60;
+    diffTempo = `${diffMinutes.toFixed(2)} min`;
+  }
+}
+
             ultimaData = dataObj;
 
             const mileageStatus = linhaErroMileage ? 'Erro' : 'OK';

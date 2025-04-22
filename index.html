@@ -143,6 +143,11 @@
           <button onclick="toggleErroPopover()" class="text-red-600 hover:underline font-medium flex items-center gap-1">
             🚨 <span id="contadorErros">0</span> erros de mileage
           </button>
+          <button onclick="ordenarPorData()"
+          class="px-3 py-1 text-sm rounded-full bg-white border border-blue-400 text-blue-800 hover:bg-blue-100">
+            📅 Ordenar por Data
+          </button>
+
         </div>
       </div>
       <div class="flex items-center gap-2">
@@ -396,19 +401,129 @@ if (ultimaData && dataObj) {
       document.getElementById('popoverErros').classList.toggle('hidden');
     }
 
-    // Cópia ao clicar no dado bruto
-    document.querySelectorAll('.copyable').forEach(element => {
-  element.addEventListener('click', () => {
-    const text = element.textContent.trim(); // Pega o texto do dado bruto
+    document.getElementById('tabelaResultados').addEventListener('click', function (event) {
+  const element = event.target;
+  if (element.classList.contains('copyable')) {
+    const text = element.textContent.trim();
     navigator.clipboard.writeText(text).then(() => {
-      // Opcional: feedback visual indicando que o texto foi copiado
-      element.style.backgroundColor = '#d1d5db'; // Altera a cor de fundo como feedback
+      element.style.backgroundColor = '#d1d5db';
       setTimeout(() => {
-        element.style.backgroundColor = ''; // Restaura a cor original após um tempo
+        element.style.backgroundColor = '';
       }, 1500);
     });
-  });
+  }
 });
+
+function ordenarPorData() {
+  const tabela = document.getElementById('tabelaResultados');
+  const linhas = Array.from(tabela.querySelectorAll('tr'));
+
+  // Ordena linhas com base na data/hora
+  const linhasOrdenadas = linhas
+    .map(linha => {
+      const dataTexto = linha.querySelector('td:nth-child(7)')?.textContent.trim();
+      const data = new Date(dataTexto.split('/').reverse().join('-'));
+      return { data, linha };
+    })
+    .filter(item => !isNaN(item.data))
+    .sort((a, b) => a.data - b.data)
+    .map(item => item.linha);
+
+  // Reinicializa variáveis
+  let kmAnteriorValido = null;
+  let ultimaDataLigada = null;
+  let ultimaDataDesligada = null;
+  let ultimaData = null;
+  const intervaloLigada = parseInt(document.getElementById('ignicaoLigadaIntervalo').value) || 120;
+  const intervaloDesligada = parseInt(document.getElementById('ignicaoDesligadaIntervalo').value) || 120;
+  const folgaIntervalo = parseInt(document.getElementById('folgaIntervalo').value) || 0;
+
+  // Limpa a tabela antes de reinserir ordenado
+  tabela.innerHTML = '';
+  let errosMileage = [];
+
+  linhasOrdenadas.forEach((linha, index) => {
+    linha.classList.remove('bg-red-50', 'text-red-700', 'font-semibold');
+
+    const kmCel = linha.querySelector('td:nth-child(5)');
+    const statusCel = linha.querySelector('td:nth-child(6)');
+    const dataCel = linha.querySelector('td:nth-child(7)');
+    const ignicaoCel = linha.querySelector('td:nth-child(8)');
+    const diffCel = linha.querySelector('td:nth-child(9)');
+    const mileageCel = linha.querySelector('td:nth-child(10)');
+    const intervaloCel = linha.querySelector('td:nth-child(11)');
+
+    const data = new Date(dataCel.textContent.split('/').reverse().join('-'));
+    const tipoByte = ignicaoCel.textContent.trim() === 'Ligada' ? '01' :
+                     ignicaoCel.textContent.trim() === 'Desligada' ? '02' : null;
+
+    const kmTexto = kmCel.textContent.replace(' km', '');
+    const kmDecimal = parseFloat(kmTexto);
+
+    let erroMileage = false;
+    let erroIntervalo = false;
+
+    // Mileage
+    if (!isNaN(kmDecimal)) {
+      if (kmAnteriorValido !== null && kmDecimal < kmAnteriorValido) {
+        erroMileage = true;
+        errosMileage.push(index + 1);
+        linha.classList.add('bg-red-50', 'text-red-700', 'font-semibold');
+        statusCel.textContent = '🔴 Erro Mileage';
+        mileageCel.textContent = 'Erro';
+      } else {
+        statusCel.textContent = '✅ OK';
+        mileageCel.textContent = 'OK';
+      }
+      kmAnteriorValido = kmDecimal;
+    }
+
+    // Intervalos de ignição
+    if (data && tipoByte) {
+      if (tipoByte === '01') {
+        if (ultimaDataLigada) {
+          const diff = (data - ultimaDataLigada) / 1000;
+          if (Math.abs(diff) > intervaloLigada + folgaIntervalo) {
+            erroIntervalo = true;
+          }
+        }
+        ultimaDataLigada = data;
+      } else if (tipoByte === '02') {
+        if (ultimaDataDesligada) {
+          const diff = (data - ultimaDataDesligada) / 1000;
+          if (Math.abs(diff) > intervaloDesligada + folgaIntervalo) {
+            erroIntervalo = true;
+          }
+        }
+        ultimaDataDesligada = data;
+      }
+    }
+
+    intervaloCel.textContent = erroIntervalo ? 'Erro' : 'OK';
+
+    // Diferença de tempo entre pacotes
+    let diffTempo = '—';
+    if (ultimaData && data) {
+      const diffSeconds = (data - ultimaData) / 1000;
+      diffTempo = diffSeconds < 60 ? `${diffSeconds.toFixed(0)} s` : `${(diffSeconds / 60).toFixed(2)} min`;
+    }
+    ultimaData = data;
+    diffCel.textContent = diffTempo;
+
+    tabela.appendChild(linha);
+  });
+
+  // Atualiza o contador de erros e a lista de erros
+  document.getElementById('contadorErros').textContent = errosMileage.length;
+  const listaErrosEl = document.getElementById('listaErros');
+  listaErrosEl.innerHTML = '';
+  errosMileage.forEach(num => {
+    const li = document.createElement('li');
+    li.textContent = num;
+    listaErrosEl.appendChild(li);
+  });
+}
+
   </script>
 </body>
 </html>

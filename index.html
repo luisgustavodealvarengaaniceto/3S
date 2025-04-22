@@ -420,14 +420,20 @@ function ordenarPorData() {
 
   // Ordena linhas com base na data/hora
   const linhasOrdenadas = linhas
-    .map(linha => {
-      const dataTexto = linha.querySelector('td:nth-child(7)')?.textContent.trim();
-      const data = new Date(dataTexto.split('/').reverse().join('-'));
-      return { data, linha };
-    })
-    .filter(item => !isNaN(item.data))
-    .sort((a, b) => a.data - b.data)
-    .map(item => item.linha);
+  .map(linha => {
+    const dataTexto = linha.querySelector('td:nth-child(7)')?.textContent.trim();
+    let data = null;
+    if (dataTexto.includes(',')) {
+      const [dataParte, horaParte] = dataTexto.split(',').map(s => s.trim());
+      const [dia, mes, ano] = dataParte.split('/').map(Number);
+      const [hora, minuto, segundo] = horaParte.split(':').map(Number);
+      data = new Date(ano, mes - 1, dia, hora, minuto, segundo);
+    }
+    return { data, linha };
+  })
+  .filter(item => !isNaN(item.data)) // Garante que a data é válida
+  .sort((a, b) => a.data - b.data)   // Ordena por data/hora corretamente
+  .map(item => item.linha);
 
   // Reinicializa variáveis
   let kmAnteriorValido = null;

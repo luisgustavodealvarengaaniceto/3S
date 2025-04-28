@@ -263,7 +263,7 @@
             hex = dadoBruto.slice(-26, -18);
             if (/^[0-9A-F]+$/i.test(hex)) {
               kmDecimal = parseInt(hex, 16) / 1000;
-              kmTexto = kmDecimal.toFixed(3) + ' km';
+              kmTexto = kmDecimal.toFixed(3).replace('.', ',') + ' km';
               if (kmAnteriorValido !== null && kmDecimal < kmAnteriorValido) {
                 linhaErroMileage = true;
                 linhasComErroGlobal.push(index + 1);
